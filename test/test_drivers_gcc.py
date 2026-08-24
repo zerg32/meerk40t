@@ -1,5 +1,6 @@
 import os
 import tempfile
+import time
 import unittest
 
 from meerk40t.core import core
@@ -43,8 +44,11 @@ class TestDriverGCCIntegration(unittest.TestCase):
         self.assertEqual(str(self.device.bedwidth), "635mm")
         self.assertEqual(str(self.device.bedheight), "458mm")
         self.assertEqual(self.device.extension, "prn")
-        self.assertIsNone(self.device.spooler)
-        self.assertEqual(self.device.location(), "File export only")
+        self.assertIsNotNone(self.device.spooler)
+        self.assertFalse(self.device.can_spool)
+        self.assertEqual(
+            self.device.location(), "Windows printer queue not configured"
+        )
 
     def test_full_plan_vector_export(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -62,6 +66,84 @@ class TestDriverGCCIntegration(unittest.TestCase):
         self.assertIn(b"\x1b%1B;PR;", data)
         self.assertIn(b"PD", data)
         self.assertTrue(data.endswith(b"\x1bE\x1b%-12345X"))
+
+    def test_full_plan_windows_queue_submission(self):
+        class Printer:
+            available = True
+
+            def __init__(self):
+                self.calls = []
+
+            @staticmethod
+            def enumerate_queues():
+                return ["GCC Mercury RAW"]
+
+            def submit(self, queue, data, name):
+                self.calls.append((queue, data, name))
+                return 91
+
+        printer = Printer()
+        self.device.controller.printer = printer
+        self.device.printer_queue = "GCC Mercury RAW"
+        self.kernel.console("operation* remove\n")
+        self.kernel.console(
+            "rect 2cm 2cm 1cm 1cm engrave -s 50 "
+            "plan copy-selected preprocess validate blob preopt optimize spool\n"
+        )
+        timeout = time.time() + 2.0
+        while not printer.calls and time.time() < timeout:
+            time.sleep(0.01)
+
+        self.assertEqual(len(printer.calls), 1)
+        queue, data, name = printer.calls[0]
+        self.assertEqual(queue, "GCC Mercury RAW")
+        self.assertTrue(data.startswith(b"\x1b%-12345X"))
+        self.assertEqual(self.device.controller.last_job_id, 91)
+
+    def test_unconfigured_queue_rejects_spool_without_crash(self):
+        self.kernel.console("operation* remove\n")
+        self.kernel.console(
+            "rect 2cm 2cm 1cm 1cm engrave -s 50 "
+            "plan copy-selected preprocess validate blob preopt optimize spool\n"
+        )
+        self.assertEqual(len(self.device.spooler.queue), 0)
+
+    def test_failed_submission_does_not_stop_spooler(self):
+        class Printer:
+            available = True
+
+            def __init__(self):
+                self.calls = 0
+
+            @staticmethod
+            def enumerate_queues():
+                return ["GCC Mercury RAW"]
+
+            def submit(self, queue, data, name):
+                self.calls += 1
+                if self.calls == 1:
+                    raise OSError("offline")
+                return 92
+
+        printer = Printer()
+        self.device.controller.printer = printer
+        self.device.printer_queue = "GCC Mercury RAW"
+
+        for expected_calls in (1, 2):
+            self.kernel.console("operation* remove\n")
+            self.kernel.console(
+                "rect 2cm 2cm 1cm 1cm engrave -s 50 "
+                "plan copy-selected preprocess validate blob preopt optimize spool\n"
+            )
+            timeout = time.time() + 2.0
+            while printer.calls < expected_calls and time.time() < timeout:
+                time.sleep(0.01)
+            while self.device.spooler.queue and time.time() < timeout:
+                time.sleep(0.01)
+
+        self.assertEqual(printer.calls, 2)
+        self.assertEqual(self.device.controller.last_job_id, 92)
+        self.assertEqual(self.device.controller.state, "idle")
 
 
 if __name__ == "__main__":

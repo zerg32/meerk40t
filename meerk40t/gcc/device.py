@@ -1,12 +1,14 @@
-"""Export-only GCC LaserPro device service."""
+"""GCC LaserPro PRN export and Windows RAW printer service."""
 
 from meerk40t.core.laserjob import LaserJob
+from meerk40t.core.spoolers import Spooler
 from meerk40t.core.units import Length
 from meerk40t.core.view import View
 from meerk40t.device.devicechoices import get_effect_choices, get_operation_choices
 from meerk40t.device.mixins import Status
 from meerk40t.kernel import CommandSyntaxError, Service, signal_listener
 
+from .controller import GCCController
 from .driver import GCCDriver
 
 
@@ -167,6 +169,22 @@ class GCCDevice(Service, Status):
 
         choices = [
             {
+                "attr": "printer_queue",
+                "object": self,
+                "default": "",
+                "type": str,
+                "style": "combosmall",
+                "choices": [],
+                "exclusive": False,
+                "dynamic": self.update_printer_queues,
+                "label": _("Windows printer queue"),
+                "tip": _(
+                    "Queue that receives generated GCC jobs using RAW printing."
+                ),
+                "section": output,
+                "signals": "gcc;printer_queue",
+            },
+            {
                 "attr": "max_vector_speed",
                 "object": self,
                 "default": 1000.0,
@@ -280,8 +298,12 @@ class GCCDevice(Service, Status):
 
         self.view = View(self.bedwidth, self.bedheight, dpi=1016.0)
         self.realize()
-        self.driver = GCCDriver(self)
-        self.spooler = None
+        self.controller = GCCController(self)
+        self.driver = GCCDriver(self, transport=self.controller)
+        self.spooler = Spooler(self, driver=self.driver)
+        self.add_service_delegate(self.controller)
+        self.add_service_delegate(self.driver)
+        self.add_service_delegate(self.spooler)
 
         @self.console_argument("filename", type=str)
         @self.console_command(
@@ -292,7 +314,7 @@ class GCCDevice(Service, Status):
                 raise CommandSyntaxError
             try:
                 with open(filename, "wb") as output_file:
-                    driver = GCCDriver(self, output_file.write)
+                    driver = GCCDriver(self, output=output_file.write)
                     job = LaserJob(
                         filename,
                         list(data.plan),
@@ -315,6 +337,70 @@ class GCCDevice(Service, Status):
                     )
                 )
 
+        @self.console_command("gcc_printers", help=_("List Windows printer queues"))
+        def gcc_printers(channel, _, **kwgs):
+            try:
+                queues = self.controller.enumerate_queues()
+            except OSError as error:
+                channel(_("Could not enumerate printers: {error}").format(error=error))
+                return
+            if not queues:
+                channel(_("No Windows printer queues found."))
+                return
+            for queue in queues:
+                marker = "*" if queue == self.printer_queue else " "
+                channel("%s %s" % (marker, queue))
+
+        @self.console_command("gcc_print_status", help=_("Show GCC print status"))
+        def gcc_print_status(channel, _, **kwgs):
+            channel(
+                _("Queue: {queue}").format(
+                    queue=self.printer_queue or _("not configured")
+                )
+            )
+            channel(_("State: {state}").format(state=self.controller.state))
+            if self.controller.last_job_id is not None:
+                channel(
+                    _("Last Windows job ID: {job_id}").format(
+                        job_id=self.controller.last_job_id
+                    )
+                )
+            if self.controller.last_error is not None:
+                channel(
+                    _("Last error: {error}").format(
+                        error=self.controller.last_error
+                    )
+                )
+
+        @self.console_argument("filename", type=str)
+        @self.console_command(
+            "gcc_print_file", help=_("Submit an existing PRN file unchanged")
+        )
+        def gcc_print_file(channel, _, filename=None, **kwgs):
+            if filename is None:
+                raise CommandSyntaxError
+
+            def submit_file():
+                try:
+                    with open(filename, "rb") as stream:
+                        data = stream.read()
+                    job_id = self.controller.submit(data, filename)
+                except (OSError, ValueError) as error:
+                    channel(
+                        _("Could not submit {filename}: {error}").format(
+                            filename=filename, error=error
+                        )
+                    )
+                    return
+                channel(
+                    _("Windows accepted the job as ID {job_id}.").format(
+                        job_id=job_id
+                    )
+                )
+
+            self.threaded(submit_file, thread_name="gcc-print-file")
+            channel(_("Windows print submission started."))
+
     @property
     def safe_label(self):
         label = getattr(self, "label", self.name).replace(" ", "-")
@@ -324,15 +410,35 @@ class GCCDevice(Service, Status):
         self.realize()
 
     def location(self):
-        return self._("File export only")
+        if self.printer_queue:
+            return self.printer_queue
+        return self._("Windows printer queue not configured")
 
     @property
     def connected(self):
-        return False
+        return self.controller.ready
 
     @property
     def is_busy(self):
-        return False
+        return self.controller.is_busy
+
+    @property
+    def can_spool(self):
+        return self.controller.ready
+
+    @property
+    def spool_unavailable_reason(self):
+        return self.controller.unavailable_reason
+
+    def update_printer_queues(self, choice_dict):
+        try:
+            queues = self.controller.enumerate_queues()
+        except (AttributeError, OSError):
+            queues = []
+        configured = str(getattr(self, "printer_queue", "")).strip()
+        if configured and configured not in queues:
+            queues.append(configured)
+        choice_dict["choices"] = sorted(queues, key=str.casefold)
 
     @property
     def current(self):

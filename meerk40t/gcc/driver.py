@@ -56,9 +56,10 @@ def _color_rgb(value):
 class GCCDriver:
     """Build a complete export synchronously when queued CutCode is flushed."""
 
-    def __init__(self, service, output=None):
+    def __init__(self, service, output=None, transport=None):
         self.service = service
         self.output = output
+        self.transport = transport
         self.queue = []
         self.paused = False
         self.hold = False
@@ -85,11 +86,22 @@ class GCCDriver:
         self.queue = []
 
     def job_finish(self, job):
-        data = self._build_job()
-        if self.output is not None:
-            self.output(data)
-        self.queue = []
-        self._job = None
+        try:
+            data = self._build_job()
+            if self.output is not None:
+                self.output(data)
+            if self.transport is not None:
+                self.transport.submit(data, self._document_name(job))
+        finally:
+            self.queue = []
+            self._job = None
+
+    @staticmethod
+    def _document_name(job):
+        label = str(getattr(job, "label", "") or "")
+        label = os.path.basename(label)
+        label = "".join(character for character in label if ord(character) >= 32)
+        return label[:255] or "MeerK40t GCC Job"
 
     def plot(self, cut):
         self.queue.append(cut)

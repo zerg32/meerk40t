@@ -15,7 +15,7 @@ class GCCConfiguration(MWindow):
         icon = wx.NullIcon
         icon.CopyFromBitmap(icons8_administrative_tools.GetBitmap())
         self.SetIcon(icon)
-        self.SetTitle(_("GCC LaserPro Export Configuration"))
+        self.SetTitle(_("GCC LaserPro Output Configuration"))
 
         notebook = wx.aui.AuiNotebook(
             self,
@@ -30,7 +30,7 @@ class GCCConfiguration(MWindow):
         self.panels = []
         for choices, title in (
             ("gcc-bed", _("Device")),
-            ("gcc-export", _("Export")),
+            ("gcc-export", _("Output")),
             ("gcc-defaults", _("Operation Defaults")),
             ("gcc-effects", _("Effects")),
         ):

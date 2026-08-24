@@ -1,4 +1,4 @@
-"""GCC LaserPro export device plugin."""
+"""GCC LaserPro PRN export and Windows printing plugin."""
 
 from .device import GCCDevice
 
@@ -12,7 +12,7 @@ def plugin(kernel, lifecycle=None):
         _ = kernel.translation
         kernel.register("provider/device/gcc", GCCDevice)
         kernel.register(
-            "provider/friendly/gcc", (_("GCC LaserPro (file export)"), 7)
+            "provider/friendly/gcc", (_("GCC LaserPro (PRN / Windows RAW)"), 7)
         )
         kernel.register(
             "dev_info/gcc-laserpro",
@@ -22,8 +22,8 @@ def plugin(kernel, lifecycle=None):
                     "GCC LaserPro Mercury III (Old Motherboard)"
                 ),
                 "extended_info": _(
-                    "Experimental GCC LaserPro PRN file export. This device does "
-                    "not provide a live connection to the laser."
+                    "Experimental GCC LaserPro PRN export and Windows RAW printer "
+                    "queue submission. Physical machine status is not available."
                 ),
                 "priority": 0,
                 "family": _("GCC LaserPro CO2-Laser"),

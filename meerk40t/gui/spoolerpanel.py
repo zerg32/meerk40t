@@ -1086,6 +1086,7 @@ class SpoolerPanel(wx.Panel):
         self.set_pause_color()
 
     @signal_listener("spooler;completed")
+    @signal_listener("spooler;error")
     @dispatch_to_main_thread
     def on_spooler_completed(self, origin, *args):
         self.refresh_history()

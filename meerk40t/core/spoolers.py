@@ -30,7 +30,14 @@ def plugin(kernel, lifecycle):
         def spool(command, channel, _, data=None, remainder=None, **kwgs):
             device = kernel.device
 
-            spooler = device.spooler
+            spooler = getattr(device, "spooler", None)
+            can_spool = getattr(device, "can_spool", spooler is not None)
+            if spooler is None or not can_spool:
+                reason = getattr(device, "spool_unavailable_reason", None)
+                if not reason:
+                    reason = _("This device cannot spool jobs.")
+                channel(reason)
+                return "spooler", spooler
             # Do we have a filename to use as label?
             label = kernel.elements.basename
 
@@ -563,14 +570,17 @@ class Spooler:
             if self.driver.hold_work(priority):
                 time.sleep(0.01)
                 continue
-            if program != self._current:
-                # A different job is loaded. If it has a job_start, we call that.
-                if hasattr(self.driver, "job_start"):
-                    function = getattr(self.driver, "job_start")
-                    function(program)
-            self._current = program
             try:
+                if program != self._current:
+                    # A different job is loaded. If it has a job_start, we call that.
+                    if hasattr(self.driver, "job_start"):
+                        function = getattr(self.driver, "job_start")
+                        function(program)
+                self._current = program
                 fully_executed = program.execute(self.driver)
+                if fully_executed and hasattr(self.driver, "job_finish"):
+                    function = getattr(self.driver, "job_finish")
+                    function(program)
             except ConnectionAbortedError:
                 # Driver could no longer connect to where it was told to send the data.
                 return
@@ -581,14 +591,17 @@ class Spooler:
                 with self._lock:
                     self._lock.wait()
                 continue
+            except Exception as error:
+                self.context.kernel.channel("console")(
+                    self.context._("Spooler job failed: {error}").format(
+                        error=error
+                    )
+                )
+                self.remove(program, status="failed", error=str(error))
+                continue
             if fully_executed:
                 # all work finished
                 self.remove(program)
-
-                # If we finished this work we call job_finished.
-                if hasattr(self.driver, "job_finish"):
-                    function = getattr(self.driver, "job_finish")
-                    function(program)
 
     @property
     def is_idle(self):
@@ -736,31 +749,36 @@ class Spooler:
         self.context.signal("spooler;queue", len(self._queue))
         self.context.signal("spooler;completed")
 
-    def remove(self, element):
+    def remove(self, element, status=None, error=None):
         with self._lock:
-            status = "completed"
-            if element.status == "Running":
-                element.stop()
-                status = "Stopped"
-            self.context.logging.event(
-                {
-                    "uid": getattr(element, "uid", None),
-                    "status": status,
-                    "loop": getattr(element, "loops_executed", None),
-                    "total": getattr(element, "loops", None),
-                    "label": getattr(element, "label", None),
-                    "start_time": getattr(element, "time_started", None),
-                    "duration": getattr(element, "runtime", None),
-                    "device": self.context.label,
-                    "important": not getattr(element, "helper", False),
-                    "estimate": element.estimate_time()
-                    if hasattr(element, "estimate_time")
-                    else None,
-                    "steps_done": getattr(element, "steps_done", None),
-                    "steps_total": getattr(element, "steps_total", None),
-                }
-            )
-            self.context.signal("spooler;completed")
+            if status is None:
+                status = "completed"
+                if element.status == "Running":
+                    element.stop()
+                    status = "Stopped"
+            event = {
+                "uid": getattr(element, "uid", None),
+                "status": status,
+                "loop": getattr(element, "loops_executed", None),
+                "total": getattr(element, "loops", None),
+                "label": getattr(element, "label", None),
+                "start_time": getattr(element, "time_started", None),
+                "duration": getattr(element, "runtime", None),
+                "device": self.context.label,
+                "important": not getattr(element, "helper", False),
+                "estimate": element.estimate_time()
+                if hasattr(element, "estimate_time")
+                else None,
+                "steps_done": getattr(element, "steps_done", None),
+                "steps_total": getattr(element, "steps_total", None),
+            }
+            if error is not None:
+                event["error"] = error
+            self.context.logging.event(event)
+            if status == "failed":
+                self.context.signal("spooler;error", element, error)
+            else:
+                self.context.signal("spooler;completed")
             element.stop()
             for i in range(len(self._queue) - 1, -1, -1):
                 e = self._queue[i]

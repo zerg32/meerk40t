@@ -129,6 +129,81 @@ class TestGCCDriver(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "horizontal raster"):
             driver.job_finish(job)
 
+    def test_transport_receives_complete_job_and_name(self):
+        class Transport:
+            def __init__(self):
+                self.calls = []
+
+            def submit(self, data, name):
+                self.calls.append((data, name))
+
+        transport = Transport()
+        driver = GCCDriver(GCCServiceStub(), transport=transport)
+        job = LaserJob("C:/jobs/test gcc.prn", [], driver=driver)
+        driver.job_start(job)
+        driver.plot(
+            LineCut(
+                (400, 400),
+                (800, 400),
+                settings={"speed": 50, "power": 200},
+                color=Color("red"),
+            )
+        )
+        driver.job_finish(job)
+
+        self.assertEqual(len(transport.calls), 1)
+        data, name = transport.calls[0]
+        self.assertTrue(data.startswith(b"\x1b%-12345X"))
+        self.assertEqual(name, "test gcc.prn")
+
+    def test_file_and_transport_receive_identical_bytes(self):
+        class Transport:
+            def __init__(self):
+                self.data = None
+
+            def submit(self, data, name):
+                self.data = data
+
+        file_data = []
+        transport = Transport()
+        driver = GCCDriver(
+            GCCServiceStub(), output=file_data.append, transport=transport
+        )
+        job = LaserJob("same.prn", [], driver=driver)
+        driver.job_start(job)
+        driver.plot(
+            LineCut(
+                (400, 400),
+                (800, 400),
+                settings={"speed": 50, "power": 200},
+                color=Color("red"),
+            )
+        )
+        driver.job_finish(job)
+        self.assertEqual(file_data, [transport.data])
+
+    def test_transport_failure_clears_driver_state(self):
+        class Transport:
+            @staticmethod
+            def submit(data, name):
+                raise OSError("printer offline")
+
+        driver = GCCDriver(GCCServiceStub(), transport=Transport())
+        job = LaserJob("failed.prn", [], driver=driver)
+        driver.job_start(job)
+        driver.plot(
+            LineCut(
+                (400, 400),
+                (800, 400),
+                settings={"speed": 50, "power": 200},
+                color=Color("red"),
+            )
+        )
+        with self.assertRaisesRegex(OSError, "printer offline"):
+            driver.job_finish(job)
+        self.assertEqual(driver.queue, [])
+        self.assertIsNone(driver._job)
+
 
 if __name__ == "__main__":
     unittest.main()

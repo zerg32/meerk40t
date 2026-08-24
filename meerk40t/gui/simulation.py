@@ -1791,6 +1791,14 @@ class SimulationPanel(wx.Panel, Job):
         # request_refresh is thread safe
         self.widget_scene.request_refresh()
 
+    @signal_listener("gcc;printer_queue")
+    @dispatch_to_main_thread
+    def on_printer_queue_change(self, origin, *args):
+        self.button_spool.Enable(
+            getattr(self.context.device, "spooler", None) is not None
+            and getattr(self.context.device, "can_spool", True)
+        )
+
     def show_wait(self, flag):
         self.wait_info.Show(flag)
         sizer = self.GetSizer()
@@ -1828,7 +1836,10 @@ class SimulationPanel(wx.Panel, Job):
             self.button_cancel_calculate.Hide()
             self.button_cancel_calculate.Enable(False)
             self.button_spool.SetLabel(spool_label)
-            self.button_spool.Enable(True)
+            self.button_spool.Enable(
+                getattr(self.context.device, "spooler", None) is not None
+                and getattr(self.context.device, "can_spool", True)
+            )
         except RuntimeError:
             pass
         try:
@@ -2137,6 +2148,15 @@ class SimulationPanel(wx.Panel, Job):
         self.text_playback_speed.SetValue(f"{value}%")
 
     def on_button_spool(self, event=None):  # wxGlade: Simulation.<event_handler>
+        if (
+            getattr(self.context.device, "spooler", None) is None
+            or not getattr(self.context.device, "can_spool", True)
+        ):
+            reason = getattr(
+                self.context.device, "spool_unavailable_reason", None
+            ) or _("This device cannot spool jobs.")
+            wx.MessageBox(reason, _("Send to Laser"), wx.OK | wx.ICON_WARNING)
+            return
         self.context(f"plan{self.plan_name} spool\n")
         self.context("window close Simulation\n")
         if self.context.auto_spooler:

@@ -67,9 +67,15 @@ def queue_cutplan_to_spooler(context, optimize=True, hold_policy="laserpane"):
         )
         return False
     device = context.device
-    if device is None or getattr(device, "spooler", None) is None:
+    can_spool = (
+        device is not None
+        and getattr(device, "spooler", None) is not None
+        and getattr(device, "can_spool", True)
+    )
+    if not can_spool:
+        reason = getattr(device, "spool_unavailable_reason", None)
         wx.MessageBox(
-            _("Connect your laser device first (Laser tab → Connect)."),
+            reason or _("Connect your laser device first (Laser tab → Connect)."),
             _("Queue Job"),
             wx.OK | wx.ICON_WARNING,
         )
@@ -1250,7 +1256,17 @@ class JobPanel(wx.Panel):
         can_export = has_content and hasattr(self.context.device, "extension")
         self.btn_update.Enable(can_update)
         self.btn_export.Enable(can_export)
-        self.btn_spool.Enable(has_content)
+        can_spool = (
+            has_content
+            and getattr(self.context.device, "spooler", None) is not None
+            and getattr(self.context.device, "can_spool", True)
+        )
+        self.btn_spool.Enable(can_spool)
+
+    @signal_listener("gcc;printer_queue")
+    @dispatch_to_main_thread
+    def on_printer_queue_change(self, origin, *args):
+        self.on_selection(None)
 
     def on_spool_plan(self, event):
         if self.list_plan.GetFirstSelected() == -1:
