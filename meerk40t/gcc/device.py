@@ -187,7 +187,7 @@ class GCCDevice(Service, Status):
             {
                 "attr": "max_vector_speed",
                 "object": self,
-                "default": 1000.0,
+                "default": 1066.8,
                 "type": float,
                 "style": "speed",
                 "label": _("Maximum vector speed"),
@@ -200,7 +200,7 @@ class GCCDevice(Service, Status):
             {
                 "attr": "max_raster_speed",
                 "object": self,
-                "default": 1000.0,
+                "default": 1066.8,
                 "type": float,
                 "style": "speed",
                 "label": _("Maximum raster speed"),

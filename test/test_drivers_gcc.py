@@ -44,6 +44,8 @@ class TestDriverGCCIntegration(unittest.TestCase):
         self.assertEqual(str(self.device.bedwidth), "635mm")
         self.assertEqual(str(self.device.bedheight), "458mm")
         self.assertEqual(self.device.extension, "prn")
+        self.assertEqual(self.device.max_vector_speed, 1066.8)
+        self.assertEqual(self.device.max_raster_speed, 1066.8)
         self.assertIsNotNone(self.device.spooler)
         self.assertFalse(self.device.can_spool)
         self.assertEqual(

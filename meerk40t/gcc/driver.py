@@ -114,7 +114,7 @@ class GCCDriver:
     def _speed(self, settings, raster=False):
         speed = float(settings.get("speed", 0))
         attr = "max_raster_speed" if raster else "max_vector_speed"
-        maximum = float(getattr(self.service, attr, 1000.0))
+        maximum = float(getattr(self.service, attr, 1066.8))
         if maximum <= 0:
             raise ValueError("%s must be greater than zero" % attr)
         return _clamp(speed * 1000.0 / maximum)
