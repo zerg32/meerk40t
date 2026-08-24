@@ -21,7 +21,11 @@ if (
     os.environ["GDK_BACKEND"] = "x11"
 
 # Print Python stack on native crashes (SIGSEGV etc).
-faulthandler.enable()
+if sys.stderr is not None:
+    try:
+        faulthandler.enable()
+    except (OSError, RuntimeError):
+        pass
 
 APPLICATION_NAME = "MeerK40t"
 APPLICATION_VERSION = "0.9.9040"
