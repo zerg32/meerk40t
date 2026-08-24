@@ -810,7 +810,7 @@ class Scene(Module, Job):
             gc.SetFont(font, wx.BLACK)
             self._draw_scene_layers(gc, 0, LAYER_GENERIC_NODES)
             gc.Destroy()
-            from meerk40t.camera.camera import composite_bed_photo_on_device_dc
+            from meerk40t.camera import composite_bed_photo_on_device_dc
 
             composite_bed_photo_on_device_dc(self, dc)
             dc.SelectObject(wx.NullBitmap)
