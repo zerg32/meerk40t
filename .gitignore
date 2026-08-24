@@ -141,6 +141,8 @@ mk40t.py
 
 # Local test files
 local_workspace/
+.gcc-research/
+/gcc-capture-fixtures/
 
 # VS Code settings
 .vscode/

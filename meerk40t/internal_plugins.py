@@ -44,6 +44,10 @@ def plugin(kernel, lifecycle):
 
         plugins.append(ruida_driver.plugin)
 
+        from .gcc import plugin as gcc_driver
+
+        plugins.append(gcc_driver.plugin)
+
         from .rotary import rotary
 
         plugins.append(rotary.plugin)
