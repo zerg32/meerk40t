@@ -21,8 +21,13 @@ def plugin(kernel, lifecycle):
         https://github.com/meerk40t/meerk40t-barcodes
         """
 
-        from barcodes.main import plugin as barplugin
-
-        plugins.append(barplugin)
+        try:
+            from barcodes.main import plugin as barplugin
+        except ImportError:
+            # Optional build plugin. A frozen executable must still start when
+            # the package was not installed in the build environment.
+            pass
+        else:
+            plugins.append(barplugin)
 
         return plugins
