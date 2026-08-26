@@ -130,6 +130,13 @@ class TestDriverGCCIntegration(unittest.TestCase):
         printer = Printer()
         self.device.controller.printer = printer
         self.device.printer_queue = "GCC Mercury RAW"
+        errors = []
+
+        def on_spooler_error(origin, job, error):
+            errors.append((origin, job, error))
+
+        self.kernel.listen("spooler;error", on_spooler_error)
+        self.kernel.process_queue()
 
         for expected_calls in (1, 2):
             self.kernel.console("operation* remove\n")
@@ -142,8 +149,12 @@ class TestDriverGCCIntegration(unittest.TestCase):
                 time.sleep(0.01)
             while self.device.spooler.queue and time.time() < timeout:
                 time.sleep(0.01)
+            self.kernel.process_queue()
 
         self.assertEqual(printer.calls, 2)
+        self.assertEqual(len(errors), 1)
+        self.assertEqual(errors[0][0], self.device.path)
+        self.assertEqual(errors[0][2], "offline")
         self.assertEqual(self.device.controller.last_job_id, 92)
         self.assertEqual(self.device.controller.state, "idle")
 

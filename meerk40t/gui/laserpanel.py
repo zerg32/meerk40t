@@ -663,6 +663,24 @@ class LaserPanel(wx.Panel):
             self._progress_last_update = 0.0
         self.update_job_progress(force=origin == "spooler;completed")
 
+    @signal_listener("spooler;error")
+    @dispatch_to_main_thread
+    def on_spooler_error(self, origin, job, error):
+        device = self.context.device
+        driver = getattr(job, "_driver", None)
+        if (
+            device is None
+            or origin != device.path
+            or driver is not getattr(device, "driver", None)
+            or driver.__class__.__module__ != "meerk40t.gcc.driver"
+        ):
+            return
+        wx.MessageBox(
+            _("Could not send the job to the laser:\n\n{error}").format(error=error),
+            _("GCC Job Failed"),
+            wx.OK | wx.ICON_ERROR,
+        )
+
     @staticmethod
     def _slider_to_factor(sliderval):
         offset = sliderval - OVERRIDE_SLIDER_CENTER
